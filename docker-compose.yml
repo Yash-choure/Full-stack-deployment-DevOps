@@ -1,0 +1,15 @@
+services:
+  backend:
+    image: bunnyop/bunnyidv:bakend
+    environment:
+     
+      ALLOWED_HOSTS: "*"
+    ports:
+      - "8000:8000"
+
+  frontend:
+    image: bunnyop/bunnyidv:frontend
+    depends_on:
+      - backend
+    ports:
+      - "5173:5173"
