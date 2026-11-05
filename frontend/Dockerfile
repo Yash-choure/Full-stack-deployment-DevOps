@@ -1,4 +1,4 @@
-FROM node:18-alpine AS builder
+FROM node:20-alpine AS builder
 
 WORKDIR /app
 
@@ -7,21 +7,23 @@ RUN npm ci
 
 COPY . .
 
-FROM node:18-alpine
+FROM node:20-alpine
 
 WORKDIR /app
 
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/package*.json ./
-COPY --from=builder /app/src ./src
-COPY --from=builder /app/public ./public
-COPY --from=builder /app/index.html ./
-COPY --from=builder /app/vite.config.ts ./
-COPY --from=builder /app/tsconfig*.json ./
-COPY --from=builder /app/eslint.config.js ./
+RUN addgroup -S app && adduser -S app -G app
 
-RUN addgroup -S app && adduser -S app -G app \
-    && chown -R app:app /app
+COPY --from=builder --chown=app:app /app/node_modules ./node_modules
+COPY --from=builder /app/package*.json ./
+COPY --from=builder --chown=app:app /app/src ./src
+COPY --from=builder --chown=app:app /app/public ./public
+COPY --from=builder --chown=app:app /app/index.html ./
+COPY --from=builder --chown=app:app /app/vite.config.ts ./
+COPY --from=builder --chown=app:app /app/tsconfig*.json ./
+COPY --from=builder --chown=app:app /app/eslint.config.js ./
+
+ARG API_URL=http://localhost:8000
+ENV VITE_API_URL=$API_URL
 
 USER app
 
