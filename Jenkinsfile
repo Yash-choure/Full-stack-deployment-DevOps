@@ -1,9 +1,14 @@
+// Jenkins declarative pipeline: build -> push -> deploy on every push to master.
+//
+// Required Jenkins credentials (Manage Jenkins -> Credentials):
+//   dockerhub-creds  : Username with password (Docker Hub username + access token)
+//   deploy-ssh-key   : SSH Username with private key (user on the deploy server, e.g. ubuntu)
+//   deploy-host      : Secret text (public IP / DNS of the EC2 VM)
+//
+// Required plugins: Git, GitHub, Pipeline, SSH Agent, Credentials Binding.
+
 pipeline {
     agent any
-
-    triggers {
-        githubPush()
-    }
 
     options {
         timestamps()
@@ -35,7 +40,6 @@ pipeline {
             parallel {
                 stage('Backend checks') {
                     steps {
-                        // Runs inside a throwaway container so Jenkins needs no Python install
                         sh '''
                           docker run --rm -v "$PWD/backend":/app -w /app python:3.12-slim sh -c \
                             "pip install --no-cache-dir -r requirements.txt && python manage.py check && python manage.py test"
@@ -79,30 +83,18 @@ pipeline {
 
         stage('Deploy') {
             steps {
-                withCredentials([string(credentialsId: 'deploy-host', variable: 'DEPLOY_HOST'),
-                                 string(credentialsId: 'django-secret-key', variable: 'DJANGO_SECRET_KEY')]) {
+                withCredentials([string(credentialsId: 'deploy-host', variable: 'DEPLOY_HOST')]) {
                     sshagent(credentials: ['deploy-ssh-key']) {
                         sh '''
-                          # Fail fast with a clear message if a file is missing from the repo
-                          test -f docker-compose.yml  || { echo "ERROR: docker-compose.yml not found in repo root"; exit 1; }
-                          test -f deploy/deploy.sh    || { echo "ERROR: deploy/deploy.sh not found in repo"; exit 1; }
+                          test -f docker-compose.yml || { echo "ERROR: docker-compose.yml not found"; exit 1; }
 
                           SSH="ssh -o StrictHostKeyChecking=accept-new $DEPLOY_USER@$DEPLOY_HOST"
 
                           $SSH "mkdir -p $DEPLOY_DIR"
-                          scp -o StrictHostKeyChecking=accept-new \
-                              docker-compose.yml deploy/deploy.sh \
-                              $DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_DIR/
+                          scp -o StrictHostKeyChecking=accept-new docker-compose.yml $DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_DIR/
 
-                          # Keep a .prod.yml copy on the server so deploy.sh works with either filename
-                          $SSH "cp $DEPLOY_DIR/docker-compose.yml $DEPLOY_DIR/docker-compose.prod.yml"
-
-                          # Secrets are passed over the SSH session env, never written to the repo
-                          $SSH "cd $DEPLOY_DIR && chmod +x deploy.sh && \
-                                BACKEND_IMAGE=$BACKEND_IMAGE FRONTEND_IMAGE=$FRONTEND_IMAGE \
-                                IMAGE_TAG=$IMAGE_TAG DJANGO_SECRET_KEY='$DJANGO_SECRET_KEY' \
-                                DJANGO_ALLOWED_HOSTS='$DEPLOY_HOST' \
-                                ./deploy.sh"
+                          $SSH "cd $DEPLOY_DIR && docker compose pull && docker compose up -d --remove-orphans && docker compose ps"
+                          $SSH "docker image prune -f"
                         '''
                     }
                 }
