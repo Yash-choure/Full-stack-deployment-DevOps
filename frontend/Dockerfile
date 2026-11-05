@@ -22,7 +22,7 @@ COPY --from=builder --chown=app:app /app/vite.config.ts ./
 COPY --from=builder --chown=app:app /app/tsconfig*.json ./
 COPY --from=builder --chown=app:app /app/eslint.config.js ./
 
-ARG API_URL=http://localhost:8000
+ARG API_URL=
 ENV VITE_API_URL=$API_URL
 
 USER app
