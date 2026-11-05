@@ -1,14 +1,3 @@
-// Jenkins declarative pipeline: build -> push -> deploy on every push to main.
-//
-// Required Jenkins credentials (Manage Jenkins -> Credentials):
-//   dockerhub-creds  : Username with password (Docker Hub username + access token)
-//   deploy-ssh-key   : SSH Username with private key (user on the deploy server, e.g. ubuntu)
-//   deploy-host      : Secret text (public IP / DNS of the EC2 VM)
-//   django-secret-key: Secret text (value for DJANGO_SECRET_KEY on the server)
-//
-// Required plugins: Git, GitHub, Pipeline, Docker Pipeline, SSH Agent, Credentials Binding.
-// Trigger: GitHub webhook -> http://<jenkins>/github-webhook/  (or enable "Poll SCM" as a fallback).
-
 pipeline {
     agent any
 
@@ -94,12 +83,19 @@ pipeline {
                                  string(credentialsId: 'django-secret-key', variable: 'DJANGO_SECRET_KEY')]) {
                     sshagent(credentials: ['deploy-ssh-key']) {
                         sh '''
+                          # Fail fast with a clear message if a file is missing from the repo
+                          test -f docker-compose.yml  || { echo "ERROR: docker-compose.yml not found in repo root"; exit 1; }
+                          test -f deploy/deploy.sh    || { echo "ERROR: deploy/deploy.sh not found in repo"; exit 1; }
+
                           SSH="ssh -o StrictHostKeyChecking=accept-new $DEPLOY_USER@$DEPLOY_HOST"
 
                           $SSH "mkdir -p $DEPLOY_DIR"
                           scp -o StrictHostKeyChecking=accept-new \
-                              docker-compose.prod.yml deploy/deploy.sh \
+                              docker-compose.yml deploy/deploy.sh \
                               $DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_DIR/
+
+                          # Keep a .prod.yml copy on the server so deploy.sh works with either filename
+                          $SSH "cp $DEPLOY_DIR/docker-compose.yml $DEPLOY_DIR/docker-compose.prod.yml"
 
                           # Secrets are passed over the SSH session env, never written to the repo
                           $SSH "cd $DEPLOY_DIR && chmod +x deploy.sh && \
