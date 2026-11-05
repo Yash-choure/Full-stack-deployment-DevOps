@@ -2,11 +2,10 @@ FROM python:3.13-slim AS builder
 
 WORKDIR /app
 
+COPY requirements.txt .
+
 RUN python -m venv /opt/venv \
-    && /opt/venv/bin/pip install --no-cache-dir \
-        django \
-        django-cors-headers \
-        psycopg2-binary
+    && /opt/venv/bin/pip install --no-cache-dir -r requirements.txt
 
 FROM python:3.13-slim
 
